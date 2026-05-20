@@ -4,23 +4,39 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const mongoose = require('mongoose');
-const astar = require('./src/utils/astar');
+const astar = require('./src/services/astar');
 
 const app = express();
 
-// --- Middleware ---
+// --- 1. Middleware ---
 app.use(express.json());
-app.use(cors()); // Critical for your friend in the US to connect
-app.use(helmet()); // Security headers
-app.use(morgan('dev')); // Logs requests to your terminal
+app.use(cors()); 
+app.use(helmet()); 
+app.use(morgan('dev')); 
 
-// --- Database Connection ---
-mongoose.connect(process.env.MONGO_URI)
+// --- 2. Synchronous Model Registration (CRITICAL: MUST RUN FIRST) ---
+require('./src/models/User');
+require('./src/models/Venue');
+require('./src/models/Floor');
+require('./src/models/Fingerprint');
+require('./src/models/NavGraph');
+require('./src/models/POI');
+require('./src/models/ActiveSession');
+console.log('📦 All 7 Mongoose models registered successfully');
+
+// --- 3. Route Mounting (Safe now that schemas exist) ---
+const venueRoutes = require('./src/routes/venue');
+app.use('/api/venues', venueRoutes);
+
+const fingerprintRoutes = require('./src/routes/fingerprint');
+app.use('/api/fingerprints', fingerprintRoutes);
+
+// --- 4. Database Connection ---
+mongoose.connect(process.env.MONGO_URI || process.env.MONGODB_URI)
   .then(() => console.log('✅ MongoDB connected'))
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
 // --- Mock Data ---
-// Tomorrow we will replace these with: const nodes = await Node.find({});
 const mockNodes = [
   {id: 'entrance', x: 0, y: 0},
   {id: 'corridor_a', x: 10, y: 0},
@@ -39,9 +55,7 @@ const mockEdges = [
   {from: 'stairs', to: 'corridor_b', weight: 7, accessible: false},
 ];
 
-// --- API Endpoints ---
-
-// 1. Health Check
+// --- 5. API Endpoints ---
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
@@ -50,8 +64,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// 2. Navigation Endpoint
-// Friend's Flutter app will POST to this
 app.post('/api/navigate', (req, res) => {
   const { startId, endId, accessibleOnly } = req.body;
 
@@ -59,7 +71,6 @@ app.post('/api/navigate', (req, res) => {
     return res.status(400).json({ error: "Missing startId or endId" });
   }
 
-  // Calculate path using your A* logic
   const path = astar(mockNodes, mockEdges, startId, endId, accessibleOnly);
 
   if (path) {
@@ -69,7 +80,7 @@ app.post('/api/navigate', (req, res) => {
   }
 });
 
-// --- Server Startup ---
+// --- 6. Server Startup ---
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
